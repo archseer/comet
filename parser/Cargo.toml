@@ -1,0 +1,34 @@
+[package]
+name = "comet"
+version = "0.1.0"
+authors = ["Blaž Hrastnik <blaz@mxxn.io>"]
+license = "MPL-2.0"
+edition = "2018"
+build = "build.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# parsing
+regex = "1.1.7"
+lalrpop-util = "0.17"
+
+# error reporting
+codespan = "0.3.0"
+codespan-reporting = "0.3.0"
+
+# not used yet
+heck = "0.3.1"
+petgraph = "0.4.13"
+moniker = "0.5.0"
+pretty = "0.5.2"
+once_cell = "0.2.1"
+itertools = "0.8.0"
+matches = "0.1.8"
+string-intern = "0.1.7"
+
+[dev-dependencies]
+pretty_assertions = "0.6"
+
+[build-dependencies]
+lalrpop = "0.17"
