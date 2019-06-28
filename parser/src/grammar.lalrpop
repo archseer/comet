@@ -1,15 +1,16 @@
 // vi: ft=rust
 use std::str::FromStr;
 use crate::{
-    pos::{self, BytePos, HasSpan, Spanned},
+    pos::{self, HasSpan, Spanned},
     ast::*,
 };
 
+// grammar<'err>(errors: &'err mut Vec<lalrpop_util::ParseError<usize, Token<'input>, parser::Error>>);
 grammar;
 
 // A bunch of macros.
 
-Sp<Rule>: Spanned<Rule, BytePos> =
+Sp<Rule>: Spanned<Rule> =
     <l: @L> <rule: Rule> <r: @R> =>
         pos::spanned2(l, r, rule);
 
@@ -72,16 +73,93 @@ SingleQuote: String = {
     }
 };
 
-// Note: we only have signed integers for now.
-Int: i64 = {
-    r"0x[0-9A-Fa-f_]+" => i64::from_str_radix(&str::replace(&<>[2..], "_", ""), 16).unwrap(),
-    r"0b[01_]+" => i64::from_str_radix(&str::replace(&<>[2..], "_", ""), 2).unwrap(),
-    r"-?[0-9_]+" => i64::from_str(&str::replace(<>, "_", "")).unwrap(),
+Ident: Ident = {
+    r"([a-z_]+[a-zA-Z0-9_]*)" => Ident(String::from_str(<>).unwrap()),
 };
 
+// Note: we only have signed integers for now.
+Int: i64 = {
+    r"-?0x[0-9A-Fa-f][0-9A-Fa-f_]*" => i64::from_str_radix(&str::replace(&<>[2..], "_", ""), 16).unwrap(),
+    r"-?0b[01][01_]+" => i64::from_str_radix(&str::replace(&<>[2..], "_", ""), 2).unwrap(),
+    r"-?[0-9][0-9_]*" => i64::from_str(&str::replace(<>, "_", "")).unwrap(),
+};
+
+Bool: bool = {
+    "true" => true,
+    "false" => false,
+}
+
+// Statement: var definition or expression
+
+pub Module: Module = {
+    Statement* => Module {
+        statements: <>,
+    }
+}
+
+
+FnStatement: Statement = {
+    "fn" <i:Ident> "(" <a:Comma<Expr>> ")" "{" <e:Expr+> "}" => Statement::Fn {
+        name: i,
+        args: a,
+        body: e,
+    },
+};
+
+
+pub Statement: Statement = {
+    FnStatement,
+    Expr => Statement::Expression(<>),
+};
+
+LetExpr: Expr = {
+    // let x = 1
+    "let" <i:Ident> "=" <e:Expr> => Expr::Let {
+        name: i,
+        ty: None,
+        value: Box::new(e),
+    },
+
+    // let x : int = 1
+    "let" <i:Ident> ":" <t:Ident> "=" <e:Expr> => Expr::Let {
+        name: i,
+        ty: Some(t),
+        value: Box::new(e),
+    }
+}
+
+IfExpr: Expr = {
+    "if" <cond:OpExpr> "{" <i:OpExpr> "}" "else" "{" <e:OpExpr> "}" => Expr::If (
+        Box::new(cond),
+        Box::new(i),
+        Box::new(e),
+    ),
+}
+
 pub Expr: Expr = {
-    // LetExpr
-    OpExpr => *<>
+    OpExpr,
+    LetExpr,
+    LambdaExpr,
+    IfExpr,
+};
+
+CallExpr: Expr = {
+    // <i:Ident> "()" => Expr::Call{
+    //     name: i,
+    //     args: Vec::new(),
+    // },
+
+    <i:Ident> "(" <a:Comma<OpExpr>> ")" => Expr::Call{
+        name: i,
+        args: a,
+    }
+};
+
+LambdaExpr: Expr = {
+    "fn" "(" <a:Comma<Ident>> ")" "{" <e:Expr+> "}" => Expr::Lambda {
+        args: a,
+        body: e,
+    },
 };
 
 // Operator precedence or, and, eq, compare (<, <=, >, >=), pipe, add (+, -, +.? -.?), factor (*, /)
@@ -101,9 +179,9 @@ pub Expr: Expr = {
 // .. ..=
 // = += -= *= /= %= &= |= ^= <<= >>= right to left
 
-Tier<Op,NextTier>: Box<Expr> = {
-    Tier<Op,NextTier> Op NextTier => Box::new(Expr::Op(<>)),
-    NextTier
+Tier<Op,NextTier>: Expr = {
+    <l:Tier<Op,NextTier>> <op:Op> <r:NextTier> => Expr::Op(Box::new(l), op, Box::new(r)),
+    NextTier => <>
 };
 
 OpExpr = Tier<OrOp, And>;
@@ -156,16 +234,26 @@ OrOp: Opcode = {
     "||" => Opcode::Or,
 };
 
-Term: Box<Expr> = {
-    Literal => Box::new(Expr::Literal(<>))
+// ExprProjection => select(record field), apply, lambda (decl) or AtomExpr
+Term: Expr = {
+    CallExpr => <>,
+    AtomExpr => <>,
 };
 
 // TODO: shift assign
 
-pub Literal: Literal = {
+AtomExpr: Expr = {
+    // symbol
+    Ident => Expr::Var(<>),
+     "()" => Expr::Unit,
+    Int => Expr::Int(<>),
+    Bool => Expr::Bool(<>),
+    // "(" <Expr> ")",
+    // float
     // string,
     // char,
-    Int => Literal::Int(<>),
+    // tuple
+    // record
     // byte,
-    // float
+    // ! => { errors.push(<>.error); ast::Expression::Unknown },
 };

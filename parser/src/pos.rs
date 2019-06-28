@@ -5,9 +5,11 @@
 
 use std::fmt;
 
+pub use codespan::ByteSpan as Span;
+
 pub use codespan::{
-    ByteIndex as BytePos, ByteOffset, ColumnIndex as Column, ColumnOffset, LineIndex as Line,
-    LineOffset, Span,
+    ByteIndex as Pos, ByteOffset, ColumnIndex as Column, ColumnOffset, LineIndex as Line,
+    LineOffset,
 };
 
 /// A location in a source file
@@ -16,7 +18,7 @@ pub struct Location {
     // TODO: file
     pub line: Line,
     pub column: Column,
-    pub absolute: BytePos,
+    pub absolute: Pos,
 }
 
 impl Location {
@@ -43,13 +45,13 @@ impl fmt::Display for Location {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
-pub struct Spanned<T, Pos> {
-    pub span: Span<Pos>,
+pub struct Spanned<T> {
+    pub span: Span,
     pub value: T,
 }
 
-impl<T, Pos> Spanned<T, Pos> {
-    pub fn map<U, F>(self, mut f: F) -> Spanned<U, Pos>
+impl<T> Spanned<T> {
+    pub fn map<U, F>(self, mut f: F) -> Spanned<U>
     where
         F: FnMut(T) -> U,
     {
@@ -60,30 +62,21 @@ impl<T, Pos> Spanned<T, Pos> {
     }
 }
 
-impl<T: fmt::Display, Pos: fmt::Display + Copy> fmt::Display for Spanned<T, Pos> {
+impl<T: fmt::Display> fmt::Display for Spanned<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}: {}", self.span.start(), self.value)
     }
 }
 
-pub fn span<Pos>(start: Pos, end: Pos) -> Span<Pos>
-where
-    Pos: Ord,
-{
+pub fn span(start: Pos, end: Pos) -> Span {
     Span::new(start, end)
 }
 
-pub fn spanned<T, Pos>(span: Span<Pos>, value: T) -> Spanned<T, Pos>
-where
-    Pos: Ord,
-{
+pub fn spanned<T>(span: Span, value: T) -> Spanned<T> {
     Spanned { span, value }
 }
 
-pub fn spanned2<T, Pos>(start: Pos, end: Pos, value: T) -> Spanned<T, Pos>
-where
-    Pos: Ord,
-{
+pub fn spanned2<T>(start: Pos, end: Pos, value: T) -> Spanned<T> {
     Spanned {
         span: span(start, end),
         value,
@@ -91,5 +84,5 @@ where
 }
 
 pub trait HasSpan {
-    fn span(&self) -> Span<BytePos>;
+    fn span(&self) -> Span;
 }

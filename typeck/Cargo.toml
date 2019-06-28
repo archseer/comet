@@ -1,0 +1,19 @@
+[package]
+name = "comet_typeck"
+version = "0.1.0"
+authors = ["Blaž Hrastnik <blaz@mxxn.io>"]
+license = "MPL-2.0"
+edition = "2018"
+
+[dependencies]
+comet_parser = { path = "../parser" }
+
+# error reporting
+codespan = "0.3.0"
+codespan-reporting = "0.3.0"
+im = "13.0.0"
+itertools = "0.8.0"
+# string-intern = "0.1.7"
+
+[dev-dependencies]
+pretty_assertions = "0.6"

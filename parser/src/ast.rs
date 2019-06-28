@@ -1,37 +1,91 @@
 //! Abstract syntax tree representation
 
-#[derive(Eq, PartialEq)]
-pub enum Expr {
-    Literal(Literal),
-    Op(Box<Expr>, Opcode, Box<Expr>),
-    // AtomExpr
+/// An identifier.
+#[derive(Clone, Eq, PartialEq)]
+pub struct Ident(pub String);
+
+impl std::fmt::Debug for Ident {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(fmt, "{}", self.0)
+    }
 }
 
-impl std::fmt::Debug for Expr {
+pub struct Module {
+    // unique_id
+    pub statements: Vec<Statement>,
+}
+
+pub enum Statement {
+    /// Function declaration.
+    Fn {
+        name: Ident,
+        args: Vec<Expr>,
+        body: Vec<Expr>,
+    },
+    /// Expression statement.
+    Expression(Expr),
+}
+
+impl std::fmt::Debug for Statement {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use self::Expr::*;
-        match self {
-            Literal(n) => write!(fmt, "{:?}", n),
-            Op(ref l, op, ref r) => write!(fmt, "({:?} {:?} {:?})", l, op, r),
+        use self::Statement::*;
+        match &self {
+            Expression(expr) => write!(fmt, "{:?}", expr),
+            Fn { name, body, args } => write!(fmt, "fn {}({:?}) -> {{ {:?} }}", name.0, args, body),
             // Error => write!(fmt, "error"),
         }
     }
 }
 
+/// A valid expression.
 #[derive(Eq, PartialEq)]
-pub enum Literal {
+pub enum Expr {
+    /// An integer literal.
     Int(i64),
+    /// A boolean
+    Bool(bool),
+    // String()
+    /// () unit type.
+    Unit,
+    /// Binary operator application.
+    Op(Box<Expr>, Opcode, Box<Expr>),
+    /// Variable reference.
+    Var(Ident),
+    /// Function call.
+    Call { name: Ident, args: Vec<Expr> },
+    /// Variable declaration.
+    Let {
+        name: Ident,
+        ty: Option<Ident>,
+        value: Box<Expr>,
+    },
+    /// If-then-else conditional.
+    If(Box<Expr>, Box<Expr>, Box<Expr>),
+    /// Lambda definition
+    Lambda { args: Vec<Ident>, body: Vec<Expr> },
+    // /// An unknown expression.
+    // Unknown
 }
 
-impl std::fmt::Debug for Literal {
+impl std::fmt::Debug for Expr {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use self::Literal::*;
-        match *self {
+        use self::Expr::*;
+        match &self {
             Int(n) => write!(fmt, "{:?}", n),
+            Bool(b) => write!(fmt, "{:?}", b),
+            Unit => write!(fmt, "()"),
+            Op(l, op, r) => write!(fmt, "({:?} {:?} {:?})", l, op, r),
+            Var(i) => write!(fmt, "{:?}", i),
+            Call { ref name, ref args } => write!(fmt, "{}({:?})", name.0, args),
+            Let { name, value, .. } => write!(fmt, "let {} = {:?}", name.0, value),
+            If(cond, t, f) => write!(fmt, "if {:?} {{ {:?} }} else {{ {:?} }}", cond, t, f),
+            Lambda { body, args } => write!(fmt, "fn ({:?}) -> {{ {:?} }}", args, body),
+            // Error => write!(fmt, "error"),
         }
     }
 }
 
+/// A binary operator.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Opcode {
     Mul,
@@ -87,13 +141,3 @@ impl std::fmt::Debug for Opcode {
         }
     }
 }
-
-// pub enum AtomExpr {
-//     ArrayExpr {
-//         ...
-//     },
-//     TupleExpr {
-//         ...
-//     },
-
-// }
