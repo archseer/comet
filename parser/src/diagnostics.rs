@@ -1,11 +1,11 @@
 pub use codespan::{
-    ByteIndex as Pos, ByteOffset, ByteSpan as Span, CodeMap, ColumnIndex, ColumnOffset, FileMap,
-    FileName, LineIndex, LineOffset, RawOffset,
+    ByteIndex, ByteOffset, ColumnIndex, ColumnOffset, FileId, Files, LineIndex, LineOffset,
+    RawOffset, Span,
 };
 
-// pub const DUMMY_SPAN: Span = Span::new(Pos(0), Pos(0));
+// pub const DUMMY_SPAN: Span = Span::new(ByteIndex(0), ByteIndex(0));
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Spanned<T> {
     pub span: Span,
     pub value: T,
@@ -29,7 +29,7 @@ impl<T: std::fmt::Display> std::fmt::Display for Spanned<T> {
     }
 }
 
-pub fn span(start: Pos, end: Pos) -> Span {
+pub fn span(start: ByteIndex, end: ByteIndex) -> Span {
     Span::new(start, end)
 }
 
@@ -37,7 +37,7 @@ pub fn spanned<T>(span: Span, value: T) -> Spanned<T> {
     Spanned { span, value }
 }
 
-pub fn spanned2<T>(start: Pos, end: Pos, value: T) -> Spanned<T> {
+pub fn spanned2<T>(start: ByteIndex, end: ByteIndex, value: T) -> Spanned<T> {
     Spanned {
         span: span(start, end),
         value,

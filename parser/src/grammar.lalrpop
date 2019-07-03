@@ -11,7 +11,6 @@ use codespan::ByteIndex;
 
 // grammar<'err>(errors: &'err mut Vec<lalrpop_util::ParseError<usize, Token<'input>, parser::Error>>);
 grammar<'err>(
-    import_paths: &mut Vec<String>,
     errors: &'err mut Vec<ParseError>,
 );
 

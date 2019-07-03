@@ -1,9 +1,10 @@
 // use codespan::{ByteSpan, FileMap};
-use codespan_reporting::{Diagnostic, Label};
+use codespan_reporting::diagnostic::{Diagnostic, Label};
 
-use crate::diagnostics::{ByteOffset, FileMap, Pos, RawOffset, Span};
+use crate::diagnostics::{ByteIndex, ByteOffset, FileId, Files, RawOffset, Span};
 use crate::symbol::{Ident, Symbol};
 
+use std::convert::TryInto;
 use std::fmt;
 use std::str::{CharIndices, FromStr};
 
@@ -46,9 +47,9 @@ fn is_hex_digit(ch: char) -> bool {
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum LexerError {
     #[error(display = "An unexpected character {:?} was found.", found)]
-    UnexpectedCharacter { start: Pos, found: char },
+    UnexpectedCharacter { start: ByteIndex, found: char },
     #[error(display = "Unexpected end of file.")]
-    UnexpectedEof { end: Pos },
+    UnexpectedEof { end: ByteIndex },
     #[error(display = "Unterminated string literal.")]
     UnterminatedStringLiteral { span: Span },
     #[error(display = "Unterminated character literal.")]
@@ -62,7 +63,7 @@ pub enum LexerError {
     #[error(display = "Empty character literal.")]
     EmptyCharLiteral { span: Span },
     #[error(display = "An unknown escape code \\{} was found.", found)]
-    UnknownEscapeCode { start: Pos, found: char },
+    UnknownEscapeCode { start: ByteIndex, found: char },
     #[error(
         display = "An integer literal {} was too large for the target type.",
         value
@@ -76,7 +77,7 @@ impl LexerError {
         match *self {
             LexerError::UnexpectedCharacter { start, found }
             | LexerError::UnknownEscapeCode { start, found } => {
-                Span::from_offset(start, ByteOffset::from_char_utf8(found))
+                Span::new(start, start + ByteOffset::from_char_len(found))
             }
             LexerError::UnexpectedEof { end } => Span::new(end, end),
             LexerError::UnterminatedStringLiteral { span }
@@ -89,48 +90,54 @@ impl LexerError {
         }
     }
 
-    pub fn to_diagnostic(&self) -> Diagnostic {
+    pub fn to_diagnostic(&self, file_id: FileId) -> Diagnostic {
         match *self {
             LexerError::UnexpectedCharacter { start, found } => {
-                let char_span = Span::from_offset(start, ByteOffset::from_char_utf8(found));
-                Diagnostic::new_error(format!("unexpected character {:?}", found))
-                    .with_label(Label::new_primary(char_span))
+                let char_span = Span::new(start, start + ByteOffset::from_char_len(found));
+                Diagnostic::new_error(
+                    format!("unexpected character {:?}", found),
+                    Label::new(file_id, char_span, "unexpected character"),
+                )
             }
-            LexerError::UnexpectedEof { end } => Diagnostic::new_error("unexpected end of file")
-                .with_label(Label::new_primary(Span::new(end, end))),
-            LexerError::UnterminatedStringLiteral { span } => {
-                Diagnostic::new_error("unterminated string literal")
-                    .with_label(Label::new_primary(span))
-            }
-            LexerError::UnterminatedCharLiteral { span } => {
-                Diagnostic::new_error("unterminated character literal")
-                    .with_label(Label::new_primary(span))
-            }
-            LexerError::UnterminatedBinLiteral { span } => {
-                Diagnostic::new_error("unterminated binary literal")
-                    .with_label(Label::new_primary(span))
-            }
-            LexerError::UnterminatedOctLiteral { span } => {
-                Diagnostic::new_error("unterminated octal literal")
-                    .with_label(Label::new_primary(span))
-            }
-            LexerError::UnterminatedHexLiteral { span } => {
-                Diagnostic::new_error("unterminated hexadecimal literal")
-                    .with_label(Label::new_primary(span))
-            }
-            LexerError::EmptyCharLiteral { span } => {
-                Diagnostic::new_error("empty character literal")
-                    .with_label(Label::new_primary(span))
-            }
+            LexerError::UnexpectedEof { end } => Diagnostic::new_error(
+                "unexpected end of file",
+                Label::new(file_id, Span::new(end, end), "end of file"),
+            ),
+            LexerError::UnterminatedStringLiteral { span } => Diagnostic::new_error(
+                "unterminated string literal",
+                Label::new(file_id, span, "unterminated string literal"),
+            ),
+            LexerError::UnterminatedCharLiteral { span } => Diagnostic::new_error(
+                "unterminated character literal",
+                Label::new(file_id, span, "unterminated character literal"),
+            ),
+            LexerError::UnterminatedBinLiteral { span } => Diagnostic::new_error(
+                "unterminated binary literal",
+                Label::new(file_id, span, "unterminated binary literal"),
+            ),
+            LexerError::UnterminatedOctLiteral { span } => Diagnostic::new_error(
+                "unterminated octal literal",
+                Label::new(file_id, span, "unterminated octal literal"),
+            ),
+            LexerError::UnterminatedHexLiteral { span } => Diagnostic::new_error(
+                "unterminated hexadecimal literal",
+                Label::new(file_id, span, "unterminated hexadecimal literal"),
+            ),
+            LexerError::EmptyCharLiteral { span } => Diagnostic::new_error(
+                "empty character literal",
+                Label::new(file_id, span, "empty character literal"),
+            ),
             LexerError::UnknownEscapeCode { start, found } => {
-                let char_span = Span::from_offset(start, ByteOffset::from_char_utf8(found));
-                Diagnostic::new_error(format!("unknown escape code \\{}", found))
-                    .with_label(Label::new_primary(char_span))
+                let char_span = Span::new(start, start + ByteOffset::from_char_len(found));
+                Diagnostic::new_error(
+                    format!("unknown escape code \\{}", found),
+                    Label::new(file_id, char_span, "unknown escape code"),
+                )
             }
-            LexerError::IntegerLiteralOverflow { span, ref value } => {
-                Diagnostic::new_error(format!("integer literal overflow with value `{}`", value))
-                    .with_label(Label::new_primary(span).with_message("overflowing literal"))
-            }
+            LexerError::IntegerLiteralOverflow { span, ref value } => Diagnostic::new_error(
+                format!("integer literal overflow with value `{}`", value),
+                Label::new(file_id, span, "overflowing literal"),
+            ),
         }
     }
 }
@@ -287,48 +294,45 @@ impl fmt::Display for Token {
 /// An iterator over a source string that yields `Token`s for subsequent use by
 /// the parser
 pub struct Lexer<'input> {
-    filemap: &'input FileMap,
+    file: &'input str,
     chars: CharIndices<'input>,
     lookahead: Option<(usize, char)>,
 }
 
 impl<'input> Lexer<'input> {
     /// Create a new lexer from the source string
-    pub fn new(filemap: &'input FileMap) -> Self {
-        let mut chars = filemap.src().char_indices();
+    pub fn new(file: &'input str) -> Self {
+        let mut chars = file.char_indices();
 
         Lexer {
-            filemap,
+            file,
             lookahead: chars.next(),
             chars,
         }
     }
 
     /// Returns the index of the end of the file
-    fn eof(&self) -> Pos {
-        self.filemap.span().end()
+    fn eof(&self) -> ByteIndex {
+        ByteIndex(self.file.len().try_into().unwrap())
     }
 
     /// Return the next character in the source string
-    fn lookahead(&self) -> Option<(Pos, char)> {
-        self.lookahead.map(|(index, ch)| {
-            let off = ByteOffset(index as RawOffset);
-            let index = self.filemap.span().start() + off;
-            (index, ch)
-        })
+    fn lookahead(&self) -> Option<(ByteIndex, char)> {
+        self.lookahead
+            .map(|(index, ch)| (ByteIndex(index as u32), ch))
     }
 
     /// Bump the current position in the source string by one character,
     /// returning the current character and byte position.
-    fn bump(&mut self) -> Option<(Pos, char)> {
+    fn bump(&mut self) -> Option<(ByteIndex, char)> {
         let current = self.lookahead();
         self.lookahead = self.chars.next();
         current
     }
 
     /// Return a slice of the source string
-    fn slice(&self, start: Pos, end: Pos) -> &'input str {
-        &self.filemap.src_slice(Span::new(start, end)).unwrap()
+    fn slice(&self, start: ByteIndex, end: ByteIndex) -> &'input str {
+        &self.file[start.to_usize()..end.to_usize()]
     }
 
     /// Test a predicate against the next character in the source
@@ -342,7 +346,7 @@ impl<'input> Lexer<'input> {
     /// Consume characters while the predicate matches for the current
     /// character, then return the consumed slice and the end byte
     /// position.
-    fn take_while<F>(&mut self, start: Pos, mut keep_going: F) -> (Pos, &'input str)
+    fn take_while<F>(&mut self, start: ByteIndex, mut keep_going: F) -> (ByteIndex, &'input str)
     where
         F: FnMut(char) -> bool,
     {
@@ -352,7 +356,7 @@ impl<'input> Lexer<'input> {
     /// Consume characters until the predicate matches for the next character
     /// in the lookahead, then return the consumed slice and the end byte
     /// position.
-    fn take_until<F>(&mut self, start: Pos, mut terminate: F) -> (Pos, &'input str)
+    fn take_until<F>(&mut self, start: ByteIndex, mut terminate: F) -> (ByteIndex, &'input str)
     where
         F: FnMut(char) -> bool,
     {
@@ -369,9 +373,9 @@ impl<'input> Lexer<'input> {
     }
 
     /// Consume a doc comment
-    fn doc_comment(&mut self, start: Pos) -> SpannedToken<'input> {
+    fn doc_comment(&mut self, start: ByteIndex) -> SpannedToken<'input> {
         let (end, mut comment) =
-            self.take_until(start + ByteOffset::from_str("|||"), |ch| ch == '\n');
+            self.take_until(start + ByteOffset::from_str_len("|||"), |ch| ch == '\n');
 
         // Skip preceding space
         if comment.starts_with(' ') {
@@ -382,7 +386,7 @@ impl<'input> Lexer<'input> {
     }
 
     /// Consume an identifier
-    fn ident(&mut self, start: Pos) -> SpannedToken<'input> {
+    fn ident(&mut self, start: ByteIndex) -> SpannedToken<'input> {
         let (end, ident) = self.take_while(start, is_ident_continue);
 
         let token = match ident {
@@ -402,7 +406,7 @@ impl<'input> Lexer<'input> {
     }
 
     /// Consume an escape code
-    fn escape_code(&mut self, start: Pos) -> Result<char, LexerError> {
+    fn escape_code(&mut self, start: ByteIndex) -> Result<char, LexerError> {
         match self.bump() {
             Some((_, '\'')) => Ok('\''),
             Some((_, '"')) => Ok('"'),
@@ -418,12 +422,12 @@ impl<'input> Lexer<'input> {
     }
 
     /// Consume a string literal
-    fn string_literal(&mut self, start: Pos) -> Result<SpannedToken<'input>, LexerError> {
+    fn string_literal(&mut self, start: ByteIndex) -> Result<SpannedToken<'input>, LexerError> {
         let mut string = String::new();
         let mut end = start;
 
         while let Some((next, ch)) = self.bump() {
-            end = next + ByteOffset::from_char_utf8(ch);
+            end = next + ByteOffset::from_char_len(ch);
             match ch {
                 '\\' => string.push(self.escape_code(next)?),
                 '"' => return Ok((start, Token::StringLiteral(string), end)),
@@ -437,12 +441,12 @@ impl<'input> Lexer<'input> {
     }
 
     /// Consume a character literal
-    fn char_literal(&mut self, start: Pos) -> Result<SpannedToken<'input>, LexerError> {
+    fn char_literal(&mut self, start: ByteIndex) -> Result<SpannedToken<'input>, LexerError> {
         let ch = match self.bump() {
             Some((next, '\\')) => self.escape_code(next)?,
             Some((next, '\'')) => {
                 return Err(LexerError::EmptyCharLiteral {
-                    span: Span::new(start, next + ByteOffset::from_char_utf8('\'')),
+                    span: Span::new(start, next + ByteOffset::from_char_len('\'')),
                 });
             }
             Some((_, ch)) => ch,
@@ -453,17 +457,20 @@ impl<'input> Lexer<'input> {
             Some((end, '\'')) => Ok((
                 start,
                 Token::CharLiteral(ch),
-                end + ByteOffset::from_char_utf8('\''),
+                end + ByteOffset::from_char_len('\''),
             )),
             Some((next, ch)) => Err(LexerError::UnterminatedCharLiteral {
-                span: Span::new(start, next + ByteOffset::from_char_utf8(ch)),
+                span: Span::new(start, next + ByteOffset::from_char_len(ch)),
             }),
             None => Err(LexerError::UnexpectedEof { end: start }),
         }
     }
 
     /// Consume a binary literal token
-    fn bin_literal(&mut self, start: Pos) -> Result<(Pos, Token, Pos), LexerError> {
+    fn bin_literal(
+        &mut self,
+        start: ByteIndex,
+    ) -> Result<(ByteIndex, Token, ByteIndex), LexerError> {
         self.bump(); // skip 'b'
         let (end, src) = self.take_while(start + ByteOffset(2), is_bin_digit);
         if src.is_empty() {
@@ -477,7 +484,10 @@ impl<'input> Lexer<'input> {
     }
 
     /// Consume a octal literal token
-    fn oct_literal(&mut self, start: Pos) -> Result<(Pos, Token, Pos), LexerError> {
+    fn oct_literal(
+        &mut self,
+        start: ByteIndex,
+    ) -> Result<(ByteIndex, Token, ByteIndex), LexerError> {
         self.bump(); // skip 'o'
         let (end, src) = self.take_while(start + ByteOffset(2), is_oct_digit);
         if src.is_empty() {
@@ -491,7 +501,7 @@ impl<'input> Lexer<'input> {
     }
 
     /// Consume a decimal literal
-    fn dec_literal(&mut self, start: Pos) -> Result<SpannedToken<'input>, LexerError> {
+    fn dec_literal(&mut self, start: ByteIndex) -> Result<SpannedToken<'input>, LexerError> {
         let (end, src) = self.take_while(start, is_dec_digit);
 
         if let Some((_, '.')) = self.lookahead() {
@@ -514,7 +524,10 @@ impl<'input> Lexer<'input> {
     }
 
     /// Consume a hexadecimal literal token
-    fn hex_literal(&mut self, start: Pos) -> Result<(Pos, Token, Pos), LexerError> {
+    fn hex_literal(
+        &mut self,
+        start: ByteIndex,
+    ) -> Result<(ByteIndex, Token, ByteIndex), LexerError> {
         self.bump(); // skip 'x'
         let (end, src) = self.take_while(start + ByteOffset(2), is_hex_digit);
         if src.is_empty() {
@@ -528,15 +541,15 @@ impl<'input> Lexer<'input> {
     }
 }
 
-pub type SpannedToken<'input> = (Pos, Token, Pos);
+pub type SpannedToken<'input> = (ByteIndex, Token, ByteIndex);
 
 impl<'input> Iterator for Lexer<'input> {
-    type Item = Result<(Pos, Token, Pos), LexerError>;
+    type Item = Result<(ByteIndex, Token, ByteIndex), LexerError>;
 
     #[allow(clippy::cyclomatic_complexity)]
     fn next(&mut self) -> Option<Result<SpannedToken<'input>, LexerError>> {
         while let Some((start, ch)) = self.bump() {
-            let end = start + ByteOffset::from_char_utf8(ch);
+            let end = start + ByteOffset::from_char_len(ch);
 
             return Some(match ch {
                 ch if is_symbol(ch) => {
@@ -609,8 +622,8 @@ impl<'input> Iterator for Lexer<'input> {
 
 #[cfg(test)]
 mod tests {
+    use codespan::Files;
     use codespan::RawIndex;
-    use codespan::{CodeMap, FileName};
 
     use super::*;
 
@@ -619,13 +632,10 @@ mod tests {
     /// This was inspired by the tests in the LALRPOP lexer
     macro_rules! test {
         ($src:expr, $($span:expr => $token:expr,)*) => {{
-            let mut codemap = CodeMap::new();
-            let filemap = codemap.add_filemap(FileName::virtual_("test"), $src.into());
-
-            let lexed_tokens: Vec<_> = Lexer::new(&filemap).collect();
+            let lexed_tokens: Vec<_> = Lexer::new(&$src).collect();
             let expected_tokens = vec![$({
-                let start = Pos($span.find("~").unwrap() as RawIndex + 1);
-                let end = Pos($span.rfind("~").unwrap() as RawIndex + 2);
+                let start = ByteIndex($span.find("~").unwrap() as RawIndex + 0);
+                let end = ByteIndex($span.rfind("~").unwrap() as RawIndex + 1);
                 Ok((start, $token, end))
             }),*];
 

@@ -74,7 +74,7 @@ pub enum Expr {
     },
     // /// An unknown expression.
     // Unknown
-    Error(Span),
+    Error,
 }
 
 impl std::fmt::Debug for Expr {
@@ -90,7 +90,7 @@ impl std::fmt::Debug for Expr {
             Let { name, value, .. } => write!(fmt, "let {} = {:?}", name.0, value),
             If(cond, t, f) => write!(fmt, "if {:?} {{ {:?} }} else {{ {:?} }}", cond, t, f),
             Lambda { body, args } => write!(fmt, "fn ({:?}) -> {{ {:?} }}", args, body),
-            Error(..) => write!(fmt, "error"),
+            Error => write!(fmt, "error"),
         }
     }
 }

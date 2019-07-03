@@ -1,7 +1,8 @@
 use crate::error::Error;
 use comet_parser as parser;
 use parser::ast::{Expr, Ident};
-use parser::pos::{Pos, Span};
+use parser::diagnostics::{ByteIndex, Span};
+use parser::symbol::Symbol;
 // use std::cell::RefCell;
 
 #[derive(Clone, PartialEq)]
@@ -82,8 +83,8 @@ pub struct Env {
     id: usize,
 
     // TODO: use symbols
-    variables: im::HashMap<String, Type>,
-    // modules: HashMap<String, ()>
+    variables: im::HashMap<Symbol, Type>,
+    // modules: HashMap<Symbol, ()>
     // type_constructors
 }
 
@@ -291,7 +292,7 @@ pub fn infer(t: &Expr, env: &mut Env, level: usize) -> Result<Type, Error> {
             // TODO: do this as desugaring in advance?
             infer(
                 &Expr::Call {
-                    name: Ident(op.to_string().to_owned()),
+                    name: Ident(Symbol::intern(op.to_string())),
                     args: vec![arg1.as_ref().clone(), arg2.as_ref().clone()],
                 },
                 env,
@@ -301,7 +302,7 @@ pub fn infer(t: &Expr, env: &mut Env, level: usize) -> Result<Type, Error> {
         Expr::Var(name) => match env.variables.get(&name.0) {
             Some(t) => Ok(instantiate(t.clone(), level, env)),
             None => Err(Error::UnknownVariable {
-                span: Span::new(Pos(0), Pos(0)),
+                span: Span::new(ByteIndex(0), ByteIndex(0)),
                 name: name.clone(),
             }),
         },
@@ -362,7 +363,7 @@ pub fn infer(t: &Expr, env: &mut Env, level: usize) -> Result<Type, Error> {
                 .get_mut(&name.0)
                 .cloned() // TODO: I don't think this is correct
                 .ok_or_else(|| Error::UndefinedFn {
-                    span: Span::new(Pos(0), Pos(0)),
+                    span: Span::new(ByteIndex(0), ByteIndex(0)),
                     name: name.clone(),
                 })
                 .and_then(|mut t| match_fun_type(&mut t, args.len(), env))?;
@@ -381,6 +382,7 @@ pub fn infer(t: &Expr, env: &mut Env, level: usize) -> Result<Type, Error> {
             Ok(ret)
         }
         Expr::If(..) => unimplemented!(),
+        Expr::Error => unreachable!(),
     }
 }
 
@@ -451,9 +453,7 @@ fn infer_test() {
     ];
 
     for Case { input, result } in cases.into_iter() {
-        let ast = parser::grammar::ExprParser::new()
-            .parse(input)
-            .expect("syntax error");
+        let ast = parser::parser::parse(input).expect("syntax error");
 
         let mut env = Env::new();
 
@@ -475,9 +475,7 @@ fn infer_error_case() {
     }];
 
     for Case { input } in cases.into_iter() {
-        let ast = parser::grammar::ExprParser::new()
-            .parse(input)
-            .expect("syntax error");
+        let ast = parser::parser::parse(input).expect("syntax error");
 
         let mut env = Env::new();
 

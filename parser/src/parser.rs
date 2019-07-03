@@ -1,24 +1,23 @@
 pub use crate::lexer::{LexerError, Token};
 use lalrpop_util::ParseError as LalrpopError;
 
-use crate::diagnostics::{FileMap, Pos, Span};
-use codespan_reporting::{Diagnostic, Label};
+use crate::diagnostics::{ByteIndex, FileId, Span};
+use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::{ast::Expr, grammar::ExprParser, lexer::Lexer};
 
-pub fn parse<'input>(filemap: &'input FileMap) -> Result<(Expr, Vec<String>), Vec<ParseError>> {
-    let mut import_paths = Vec::new();
+pub fn parse<'input>(file: &'input str) -> Result<Expr, Vec<ParseError>> {
     let mut errors = Vec::new();
-    let lexer = Lexer::new(filemap).map(|x| x.map_err(ParseError::from));
+    let lexer = Lexer::new(file).map(|x| x.map_err(ParseError::from));
     let value = ExprParser::new()
-        .parse(&mut import_paths, &mut errors, lexer)
+        .parse(&mut errors, lexer)
         .unwrap_or_else(|err| {
             errors.push(err.into());
-            Expr::Error(filemap.span())
+            Expr::Error
         });
 
     if errors.is_empty() {
-        Ok((value, import_paths))
+        Ok(value)
     } else {
         Err(errors)
     }
@@ -32,7 +31,10 @@ pub enum ParseError {
     // #[error(display = "Unknown repl command `:{}` found.", command)]
     // UnknownReplCommand { span: Span, command: String },
     #[error(display = "Unexpected EOF, expected one of: {}.", expected)]
-    UnexpectedEof { end: Pos, expected: ExpectedTokens },
+    UnexpectedEof {
+        end: ByteIndex,
+        expected: ExpectedTokens,
+    },
     #[error(
         display = "Unexpected token {}, found, expected one of: {}.",
         token,
@@ -48,11 +50,11 @@ pub enum ParseError {
 }
 
 /// Flatten away an LALRPOP error, leaving the inner `ParseError` behind
-impl<T> From<LalrpopError<Pos, T, ParseError>> for ParseError
+impl<T> From<LalrpopError<ByteIndex, T, ParseError>> for ParseError
 where
     T: Into<Token>,
 {
-    fn from(err: LalrpopError<Pos, T, ParseError>) -> ParseError {
+    fn from(err: LalrpopError<ByteIndex, T, ParseError>) -> ParseError {
         match err {
             LalrpopError::User { error } => error,
             LalrpopError::InvalidToken { .. } => unreachable!(),
@@ -91,9 +93,9 @@ impl ParseError {
     }
 
     /// Convert the error into a diagnostic message
-    pub fn to_diagnostic(&self) -> Diagnostic {
+    pub fn to_diagnostic(&self, file_id: FileId) -> Diagnostic {
         match *self {
-            ParseError::Lexer(ref err) => err.to_diagnostic(),
+            ParseError::Lexer(ref err) => err.to_diagnostic(file_id),
             // ParseError::UnknownReplCommand { span, ref command } => {
             //     Diagnostic::new_error(format!("unknown repl command `:{}`", command))
             //         .with_label(Label::new_primary(span).with_message("unexpected command"))
@@ -102,18 +104,18 @@ impl ParseError {
                 span,
                 ref token,
                 ref expected,
-            } => Diagnostic::new_error(format!("expected one of {}, found `{}`", expected, token))
-                .with_label(Label::new_primary(span).with_message("unexpected token")),
-            ParseError::UnexpectedEof { end, ref expected } => {
-                Diagnostic::new_error(format!("expected one of {}, found `EOF`", expected))
-                    .with_label(
-                        Label::new_primary(Span::new(end, end)).with_message("unexpected EOF"),
-                    )
-            }
-            ParseError::ExtraToken { span, ref token } => {
-                Diagnostic::new_error(format!("extra token `{}`", token))
-                    .with_label(Label::new_primary(span).with_message("extra token"))
-            }
+            } => Diagnostic::new_error(
+                format!("expected one of {}, found `{}`", expected, token),
+                Label::new(file_id, span, "unexpected token"),
+            ),
+            ParseError::UnexpectedEof { end, ref expected } => Diagnostic::new_error(
+                format!("expected one of {}, found `EOF`", expected),
+                Label::new(file_id, Span::new(end, end), "unexpected EOF"),
+            ),
+            ParseError::ExtraToken { span, ref token } => Diagnostic::new_error(
+                format!("extra token `{}`", token),
+                Label::new(file_id, span, "extra token"),
+            ),
         }
     }
 }
@@ -148,15 +150,12 @@ mod tests {
     #[test]
     fn expr_test() {
         use crate::ast::*;
-        use crate::diagnostics::{CodeMap, FileName};
         use crate::grammar::ExprParser;
         use crate::lexer::Lexer;
 
         macro_rules! assert_parse {
             ($res:expr, $src:expr) => {{
-                let mut codemap = CodeMap::new();
-                let filemap = codemap.add_filemap(FileName::virtual_("test.ct"), $src.into());
-                let value = parse(&filemap).map(|(val, paths)| val);
+                let value = parse($src);
 
                 assert_eq!($res, value);
             }};

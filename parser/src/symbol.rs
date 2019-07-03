@@ -17,7 +17,7 @@ use rustc_hash::FxHashMap;
 // use typed_arena::Arena;
 use toolshed::Arena;
 
-use crate::diagnostics::{Pos, Span};
+use crate::diagnostics::{ByteIndex, Span};
 
 lazy_static! {
     /// A globally accessible symbol table
