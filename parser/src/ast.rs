@@ -1,8 +1,10 @@
 //! Abstract syntax tree representation
+use crate::diagnostics::Span;
+use crate::symbol::Symbol;
 
 /// An identifier.
 #[derive(Clone, Eq, PartialEq)]
-pub struct Ident(pub String);
+pub struct Ident(pub Symbol);
 
 impl std::fmt::Debug for Ident {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -12,6 +14,7 @@ impl std::fmt::Debug for Ident {
 
 pub struct Module {
     // unique_id
+    // pub name: String,
     pub statements: Vec<Statement>,
 }
 
@@ -38,7 +41,7 @@ impl std::fmt::Debug for Statement {
 }
 
 /// A valid expression.
-#[derive(Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Expr {
     /// An integer literal.
     Int(i64),
@@ -52,7 +55,10 @@ pub enum Expr {
     /// Variable reference.
     Var(Ident),
     /// Function call.
-    Call { name: Ident, args: Vec<Expr> },
+    Call {
+        name: Ident,
+        args: Vec<Expr>,
+    },
     /// Variable declaration.
     Let {
         name: Ident,
@@ -60,11 +66,15 @@ pub enum Expr {
         value: Box<Expr>,
     },
     /// If-then-else conditional.
-    If(Box<Expr>, Box<Expr>, Box<Expr>),
+    If(Box<Expr>, Vec<Expr>, Vec<Expr>),
     /// Lambda definition
-    Lambda { args: Vec<Ident>, body: Vec<Expr> },
+    Lambda {
+        args: Vec<Ident>,
+        body: Vec<Expr>,
+    },
     // /// An unknown expression.
     // Unknown
+    Error(Span),
 }
 
 impl std::fmt::Debug for Expr {
@@ -80,7 +90,7 @@ impl std::fmt::Debug for Expr {
             Let { name, value, .. } => write!(fmt, "let {} = {:?}", name.0, value),
             If(cond, t, f) => write!(fmt, "if {:?} {{ {:?} }} else {{ {:?} }}", cond, t, f),
             Lambda { body, args } => write!(fmt, "fn ({:?}) -> {{ {:?} }}", args, body),
-            // Error => write!(fmt, "error"),
+            Error(..) => write!(fmt, "error"),
         }
     }
 }
@@ -106,6 +116,33 @@ pub enum Opcode {
     Or,
     Xor,
     Not,
+}
+
+impl Opcode {
+    pub fn to_string(&self) -> &str {
+        use Opcode::*;
+
+        match self {
+            Mul => "*",
+            Div => "/",
+            Mod => "%",
+            Add => "+",
+            Sub => "-",
+            Band => "&",
+            Bor => "|",
+            Less => "<",
+            Greater => ">",
+            Equal => "==",
+            NotEqual => "!=",
+            LessEqual => "<=",
+            GreaterEqual => ">=",
+            Pipe => "|>",
+            And => "&&",
+            Or => "||",
+            Xor => "^",
+            Not => "!",
+        }
+    }
 }
 
 // Operators are evaluated based on the operator precedence outlined

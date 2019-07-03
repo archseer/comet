@@ -1,18 +1,94 @@
 // vi: ft=rust
 use std::str::FromStr;
 use crate::{
-    pos::{self, HasSpan, Spanned},
+    lexer::{Token, LexerError},
+    symbol::Symbol,
+    parser::ParseError,
+    diagnostics::{self, Spanned},
     ast::*,
 };
+use codespan::ByteIndex;
 
 // grammar<'err>(errors: &'err mut Vec<lalrpop_util::ParseError<usize, Token<'input>, parser::Error>>);
-grammar;
+grammar<'err>(
+    import_paths: &mut Vec<String>,
+    errors: &'err mut Vec<ParseError>,
+);
+
+extern {
+    type Location = ByteIndex;
+    type Error = ParseError; // Spanned<ParseError>
+
+    enum Token {
+         "identifier" => Token::Ident(<Symbol>),
+         "doc comment" => Token::DocComment(<String>),
+         // "operator" => Token::Operator(<Symbol>),
+         "string literal" => Token::StringLiteral(<String>),
+         "char literal" => Token::CharLiteral(<char>),
+         "bin int literal" => Token::BinIntLiteral(<i64>),
+         "oct int literal" => Token::OctIntLiteral(<i64>),
+         "dec int literal" => Token::DecIntLiteral(<i64>),
+         "hex int literal" => Token::HexIntLiteral(<i64>),
+         // "byte literal" => Token::ByteLiteral(<u8>),
+         "float literal" => Token::DecFloatLiteral(<f64>),
+
+         "else" => Token::Else,
+         "if" => Token::If,
+         "in" => Token::In,
+         "let" => Token::Let,
+         "fn" => Token::Fn,
+         "match" => Token::Match,
+         "type" => Token::Type,
+         "true" => Token::True,
+         "false" => Token::False,
+
+         "+" => Token::Plus,
+         "-" => Token::Minus,
+         "*" => Token::Star,
+         "/" => Token::Slash,
+         "\\" => Token::BSlash,
+         "%" => Token::Percent,
+         "^" => Token::Caret,
+         "!" => Token::Not,
+         "&" => Token::And,
+         "|" => Token::Or,
+         "&&" => Token::AndAnd,
+         "||" => Token::OrOr,
+         "=" => Token::Eq,
+         "==" => Token::EqEq,
+         "!=" => Token::Ne,
+         ">" => Token::Gt,
+         "<" => Token::Lt,
+         ">=" => Token::Ge,
+         "<=" => Token::Le,
+         "@" => Token::At,
+         "_" => Token::Underscore,
+         "." => Token::Dot,
+         ".." => Token::DotDot,
+         "..." => Token::DotDotDot,
+         "," => Token::Comma,
+         ";" => Token::Semi,
+         ":" => Token::Colon,
+         "::" => Token::PathSep,
+         "->" => Token::RArrow,
+         "=>" => Token::FatArrow,
+         "?" => Token::Question,
+
+         "{" => Token::LBrace,
+         "[" => Token::LBracket,
+         "(" => Token::LParen,
+
+         "}" => Token::RBrace,
+         "]" => Token::RBracket,
+         ")" => Token::RParen,
+    }
+}
 
 // A bunch of macros.
 
-Sp<Rule>: Spanned<Rule> =
-    <l: @L> <rule: Rule> <r: @R> =>
-        pos::spanned2(l, r, rule);
+// Sp<Rule>: Spanned<Rule> =
+//     <l: @L> <rule: Rule> <r: @R> =>
+//         diagnostics::spanned2(l, r, rule);
 
 Semi<T>: Vec<T> = {
     <v:(<T> ";")*> <e:T?> => match e {
@@ -57,31 +133,18 @@ Pipe<T>: Vec<T> = {
     }
 };
 
-// Common patterns.
-
-Quote: String = {
-    r#""[^"]*""# => {
-      let a = <>;
-      a[1..a.len()-1].to_string()
-    }
-};
-
-SingleQuote: String = {
-    r"'[^']*'" => {
-      let a = <>;
-      a[1..a.len()-1].to_string()
-    }
-};
+//// Common patterns.
 
 Ident: Ident = {
-    r"([a-z_]+[a-zA-Z0-9_]*)" => Ident(String::from_str(<>).unwrap()),
+    "identifier" => Ident(<>),
 };
 
 // Note: we only have signed integers for now.
 Int: i64 = {
-    r"-?0x[0-9A-Fa-f][0-9A-Fa-f_]*" => i64::from_str_radix(&str::replace(&<>[2..], "_", ""), 16).unwrap(),
-    r"-?0b[01][01_]+" => i64::from_str_radix(&str::replace(&<>[2..], "_", ""), 2).unwrap(),
-    r"-?[0-9][0-9_]*" => i64::from_str(&str::replace(<>, "_", "")).unwrap(),
+    "bin int literal" => <>,
+    "oct int literal" => <>,
+    "dec int literal" => <>,
+    "hex int literal" => <>,
 };
 
 Bool: bool = {
@@ -89,7 +152,7 @@ Bool: bool = {
     "false" => false,
 }
 
-// Statement: var definition or expression
+//// Statement: var definition or expression
 
 pub Module: Module = {
     Statement* => Module {
@@ -97,9 +160,12 @@ pub Module: Module = {
     }
 }
 
+Block: Vec<Expr> = {
+    "{" <Expr*> "}"
+}
 
 FnStatement: Statement = {
-    "fn" <i:Ident> "(" <a:Comma<Expr>> ")" "{" <e:Expr+> "}" => Statement::Fn {
+    "fn" <i:Ident> "(" <a:Comma<Expr>> ")" <e:Block> => Statement::Fn {
         name: i,
         args: a,
         body: e,
@@ -128,20 +194,20 @@ LetExpr: Expr = {
     }
 }
 
-IfExpr: Expr = {
-    "if" <cond:OpExpr> "{" <i:OpExpr> "}" "else" "{" <e:OpExpr> "}" => Expr::If (
-        Box::new(cond),
-        Box::new(i),
-        Box::new(e),
-    ),
-}
+ IfExpr: Expr = {
+     "if" <cond:OpExpr> <i:Block> "else" <e:Block> => Expr::If (
+         Box::new(cond),
+         i,
+         e,
+     ),
+ }
 
-pub Expr: Expr = {
-    OpExpr,
-    LetExpr,
-    LambdaExpr,
-    IfExpr,
-};
+ pub Expr: Expr = {
+     OpExpr,
+     LetExpr,
+     LambdaExpr,
+     IfExpr,
+ };
 
 CallExpr: Expr = {
     // <i:Ident> "()" => Expr::Call{
@@ -156,7 +222,7 @@ CallExpr: Expr = {
 };
 
 LambdaExpr: Expr = {
-    "fn" "(" <a:Comma<Ident>> ")" "{" <e:Expr+> "}" => Expr::Lambda {
+    "fn" "(" <a:Comma<Ident>> ")" <e:Block> => Expr::Lambda {
         args: a,
         body: e,
     },
@@ -242,18 +308,20 @@ Term: Expr = {
 
 // TODO: shift assign
 
-AtomExpr: Expr = {
-    // symbol
-    Ident => Expr::Var(<>),
-     "()" => Expr::Unit,
-    Int => Expr::Int(<>),
-    Bool => Expr::Bool(<>),
-    // "(" <Expr> ")",
-    // float
-    // string,
-    // char,
-    // tuple
-    // record
-    // byte,
-    // ! => { errors.push(<>.error); ast::Expression::Unknown },
-};
+ AtomExpr: Expr = {
+     // symbol
+     Ident => Expr::Var(<>),
+      // "()" => Expr::Unit,
+
+     Int => Expr::Int(<>),
+     Bool => Expr::Bool(<>),
+
+     // "(" <Expr> ")",
+     // float
+     // string,
+     // char,
+     // tuple
+     // record
+     // byte,
+     // ! => { errors.push(<>.error); ast::Expression::Unknown },
+ };

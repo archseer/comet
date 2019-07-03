@@ -1,5 +1,5 @@
 use crate::typecheck::Type;
-use comet_parser::{ast::Ident, pos::Span};
+use comet_parser::{ast::Ident, diagnostics::Span};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {

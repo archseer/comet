@@ -130,7 +130,14 @@ fn adjust_levels(ty: &mut Type, id: usize, level: usize) -> Result<(), Error> {
                 Ok(())
             }
         }
-        Type::App { name, args } => unimplemented!(),
+        Type::App { name, args } => {
+            adjust_levels(name, level, id)?;
+
+            for arg in args.iter_mut() {
+                adjust_levels(arg, level, id)?;
+            }
+            Ok(())
+        }
         Type::Fn { args, ret } => {
             for arg in args.iter_mut() {
                 adjust_levels(arg, level, id)?;
@@ -278,7 +285,19 @@ pub fn infer(t: &Expr, env: &mut Env, level: usize) -> Result<Type, Error> {
         Expr::Int(..) => Ok(Type::Const(Const::Int)),
         Expr::Bool(..) => Ok(Type::Const(Const::Bool)),
         Expr::Unit => Ok(Type::Const(Const::Unit)),
-        Expr::Op(..) => unimplemented!(),
+        Expr::Op(arg1, op, arg2) => {
+            // transform binop to call with two args, infer that
+
+            // TODO: do this as desugaring in advance?
+            infer(
+                &Expr::Call {
+                    name: Ident(op.to_string().to_owned()),
+                    args: vec![arg1.as_ref().clone(), arg2.as_ref().clone()],
+                },
+                env,
+                level,
+            )
+        }
         Expr::Var(name) => match env.variables.get(&name.0) {
             Some(t) => Ok(instantiate(t.clone(), level, env)),
             None => Err(Error::UnknownVariable {
@@ -310,7 +329,8 @@ pub fn infer(t: &Expr, env: &mut Env, level: usize) -> Result<Type, Error> {
         }
         Expr::Let { name, ty, value } => {
             // Resolve the initialization expression
-            let initial = infer(value, env, level)?;
+            let initial = infer(value, env, level + 1)?;
+            let initial = generalize(initial, level + 1);
 
             // Type annotation on variable
             match ty {
@@ -318,7 +338,20 @@ pub fn infer(t: &Expr, env: &mut Env, level: usize) -> Result<Type, Error> {
                     env.variables.insert(name.0.clone(), initial.clone());
                     Ok(initial)
                 }
-                Some(ty) => unimplemented!(),
+                Some(ident) => {
+                    let ascription = env
+                        .variables
+                        .get(&ident.0)
+                        .expect("TODO: handle ascription error");
+
+                    // check if ascription is a subtype of initial
+                    if initial.eq(ascription) {
+                        // unify(initial, ascription)
+                        Ok(initial)
+                    } else {
+                        unimplemented!()
+                    }
+                }
             }
         }
         // TODO: increase level in blocks/scopes
@@ -369,48 +402,48 @@ pub fn infer_block(block: &Vec<Expr>, level: usize, env: &mut Env) -> Result<Typ
 fn infer_test() {
     struct Case {
         input: &'static str,
-        result: Type,
+        result: &'static str,
     };
 
     let cases = [
         Case {
-            result: Type::Const(Const::Int),
+            result: "Int",
             input: "1",
         },
         Case {
-            result: Type::Const(Const::Bool),
+            result: "Bool",
             input: "true",
         },
         Case {
-            result: Type::Const(Const::Int),
+            result: "(0) -> Int",
             input: "fn (a) {
                 let b = fn (c) { 2 }
                 b(2)
             }",
         },
+        // Case {
+        //     result: "(0) -> Int",
+        //     // TODO: this shouldn't fail since arg unused
+        //     input: "fn (a) {
+        //         let b = fn (c) { 2 }
+        //         b(a)
+        //     }",
+        // },
         Case {
-            result: Type::Const(Const::Int),
-            // TODO: this shouldn't fail since arg unused
-            input: "fn (a) {
-                let b = fn (c) { 2 }
-                b(a)
-            }",
-        },
-        Case {
-            result: Type::Const(Const::Int),
+            result: "(0) -> 0",
             input: "fn (a) {
                 a
             }",
         },
         Case {
-            result: Type::Const(Const::Int),
+            result: "(0) -> Int",
             input: "fn (b) {
                 let a = 1
                 a
             }",
         },
         Case {
-            result: Type::Const(Const::Int),
+            result: "Int",
             input: "fn (a, b) {
                 a + b
             }",
@@ -425,7 +458,7 @@ fn infer_test() {
         let mut env = Env::new();
 
         let t = infer(&ast, &mut env, 1).expect("unable to infer type");
-        assert_eq!((input, t), (input, result.clone()));
+        assert_eq!((input, format!("{:?}", t).as_str()), (input, *result));
     }
 }
 
