@@ -22,19 +22,19 @@ pub enum Statement {
     /// Function declaration.
     Fn {
         name: Ident,
-        args: Vec<Expr>,
+        args: Vec<Ident>, // TODO: type these in the future
         body: Vec<Expr>,
     },
-    /// Expression statement.
-    Expression(Expr),
+    // /// Expression statement.
+    // Expression(Expr),
 }
 
 impl std::fmt::Debug for Statement {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         use self::Statement::*;
         match &self {
-            Expression(expr) => write!(fmt, "{:?}", expr),
             Fn { name, body, args } => write!(fmt, "fn {}({:?}) -> {{ {:?} }}", name.0, args, body),
+            // Expression(expr) => write!(fmt, "{:?}", expr),
             // Error => write!(fmt, "error"),
         }
     }

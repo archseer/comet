@@ -4,9 +4,27 @@ use lalrpop_util::ParseError as LalrpopError;
 use crate::diagnostics::{ByteIndex, FileId, Span};
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 
-use crate::{ast::Expr, grammar::ExprParser, lexer::Lexer};
+use crate::{ast::{Expr, Module}, grammar::{ModuleParser, ExprParser}, lexer::Lexer};
 
-pub fn parse<'input>(file: &'input str) -> Result<Expr, Vec<ParseError>> {
+pub fn parse<'input>(file: &'input str) -> Result<Module, Vec<ParseError>> {
+    let mut errors = Vec::new();
+    let lexer = Lexer::new(file).map(|x| x.map_err(ParseError::from));
+    let value = ModuleParser::new()
+        .parse(&mut errors, lexer)
+        .unwrap();
+        // .unwrap_or_else(|err| {
+        //     errors.push(err.into());
+        //     Expr::Error
+        // });
+
+    if errors.is_empty() {
+        Ok(value)
+    } else {
+        Err(errors)
+    }
+}
+
+pub fn parse_expr<'input>(file: &'input str) -> Result<Expr, Vec<ParseError>> {
     let mut errors = Vec::new();
     let lexer = Lexer::new(file).map(|x| x.map_err(ParseError::from));
     let value = ExprParser::new()

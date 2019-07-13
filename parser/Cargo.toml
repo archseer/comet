@@ -35,3 +35,7 @@ pretty_assertions = "0.6"
 
 [build-dependencies]
 lalrpop = "0.17"
+
+[patch.crates-io]
+codespan = {git = "https://github.com/brendanzab/codespan"}
+codespan-reporting = {git = "https://github.com/brendanzab/codespan"}

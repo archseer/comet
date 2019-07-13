@@ -1,6 +1,8 @@
 [workspace]
 
 members = [
+    "codegen",
     "parser",
     "typeck",
+    "ir",
 ]

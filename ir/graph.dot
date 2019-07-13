@@ -1,0 +1,29 @@
+digraph g {
+entry [ label=<entry> ];
+entry -> blk_block0;
+
+blk_block0 -> prim_primop1;
+
+blk_block1 -> prim_primop2;
+
+blk_block2 -> prim_primop3;
+
+prim_primop0 -> const_1;
+
+prim_primop0 -> const_2;
+
+prim_primop1 -> prim_primop0;
+
+prim_primop1 -> blk_block1;
+
+prim_primop1 -> blk_block2;
+
+prim_primop2 -> blk_block3;
+
+prim_primop2 -> const_42;
+
+prim_primop3 -> blk_block3;
+
+prim_primop3 -> const_23;
+
+}

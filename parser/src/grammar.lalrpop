@@ -164,7 +164,7 @@ Block: Vec<Expr> = {
 }
 
 FnStatement: Statement = {
-    "fn" <i:Ident> "(" <a:Comma<Expr>> ")" <e:Block> => Statement::Fn {
+    "fn" <i:Ident> "(" <a:Comma<Ident>> ")" <e:Block> => Statement::Fn {
         name: i,
         args: a,
         body: e,
@@ -174,7 +174,6 @@ FnStatement: Statement = {
 
 pub Statement: Statement = {
     FnStatement,
-    Expr => Statement::Expression(<>),
 };
 
 LetExpr: Expr = {
