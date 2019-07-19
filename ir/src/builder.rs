@@ -1,52 +1,49 @@
 use crate::fun::*;
 
-use cranelift_entity::{ EntityRef, PrimaryMap, ListPool, EntityList, entity_impl };
+use comet_parser::symbol::Symbol;
+
+use cranelift_entity::{entity_impl, EntityList, EntityRef, ListPool, PrimaryMap};
 
 // enum Type {
 //     Int
 // }
 
-pub struct Builder {
-    fun: Function,
+pub struct Builder<'a> {
+    fun: &'a mut Function,
 }
 
-
-impl Builder {
-    pub fn new(fun: Function) -> Self {
-       Builder {
-           fun
-       } 
-    }
-
-    pub fn extract(self) -> Function {
-        self.fun
+impl<'a> Builder<'a> {
+    pub fn new(fun: &'a mut Function) -> Self {
+        Builder { fun }
     }
 
     pub fn arg_insert(&mut self, cont: Block) -> Value {
         let value = self.fun.values.push(ValueData {
-            kind: ValueType::Argument(cont)
+            kind: ValueType::Argument(cont),
         });
-        self.fun.blocks[cont].args.push(value, &mut self.fun.value_lists);
+        self.fun.blocks[cont]
+            .args
+            .push(value, &mut self.fun.value_lists);
         value
     }
 
     pub fn constant(&mut self, c: i64) -> Value {
         self.fun.values.push(ValueData {
-            kind: ValueType::Constant(c)
+            kind: ValueType::Constant(c),
         })
     }
 
-    pub fn lambda(&mut self/*, ty: Type*/) -> (Block, Value) {
+    pub fn lambda(&mut self /*, ty: Type*/) -> (Block, Value) {
         // TODO: allocate param values
         let args = EntityList::new();
 
         let block = self.fun.blocks.push(BlockData {
             args,
-            primops: EntityList::new()
+            primops: EntityList::new(),
         });
 
         let value = self.fun.values.push(ValueData {
-            kind: ValueType::Continuation(block)
+            kind: ValueType::Continuation(block),
         });
 
         (block, value)
@@ -57,7 +54,6 @@ impl Builder {
         params.push(v1, &mut self.fun.value_lists);
         params.push(v2, &mut self.fun.value_lists);
 
-
         let primop = self.fun.primops.push(PrimopData {
             kind: OpType::Eq,
             params,
@@ -65,13 +61,13 @@ impl Builder {
         });
 
         let value = self.fun.values.push(ValueData {
-            kind: ValueType::Operand(primop)
+            kind: ValueType::Operand(primop),
         });
 
         self.fun.primops[primop].result = Some(value);
 
         let value = self.fun.values.push(ValueData {
-            kind: ValueType::Primop(primop)
+            kind: ValueType::Primop(primop),
         });
 
         (primop, value)
@@ -83,15 +79,43 @@ impl Builder {
         params.push(if_then, &mut self.fun.value_lists);
         params.push(if_else, &mut self.fun.value_lists);
 
-        // TODO: tie to main
         let primop = self.fun.primops.push(PrimopData {
             kind: OpType::Branch,
             params,
             result: None,
         });
 
-        self.fun.blocks[main].primops.push(primop, &mut self.fun.primop_lists);
+        self.fun.blocks[main]
+            .primops
+            .push(primop, &mut self.fun.primop_lists);
         primop
+    }
+
+    pub fn call(&mut self, main: Block, fun: Symbol, args: &[Value]) -> (Primop, Value) {
+        let mut params = EntityList::new();
+
+        let fun = self.fun.values.push(ValueData {
+            kind: ValueType::Function(fun),
+        });
+
+        params.push(fun, &mut self.fun.value_lists);
+        params.extend(args.iter().copied(), &mut self.fun.value_lists);
+
+        let primop = self.fun.primops.push(PrimopData {
+            kind: OpType::Call,
+            params,
+            result: None,
+        });
+
+        self.fun.blocks[main]
+            .primops
+            .push(primop, &mut self.fun.primop_lists);
+
+        let value = self.fun.values.push(ValueData {
+            kind: ValueType::Primop(primop),
+        });
+
+        (primop, value)
     }
 
     pub fn jump(&mut self, main: Block, to: Value, args: &[Value]) -> Primop {
@@ -99,15 +123,15 @@ impl Builder {
         params.push(to, &mut self.fun.value_lists);
         params.extend(args.iter().copied(), &mut self.fun.value_lists);
 
-        // TODO: tie to main
-
         let primop = self.fun.primops.push(PrimopData {
-            kind: OpType::Call,
+            kind: OpType::Jump,
             params,
-            result: None
+            result: None,
         });
 
-        self.fun.blocks[main].primops.push(primop, &mut self.fun.primop_lists);
+        self.fun.blocks[main]
+            .primops
+            .push(primop, &mut self.fun.primop_lists);
         primop
     }
 }

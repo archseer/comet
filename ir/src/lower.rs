@@ -1,12 +1,42 @@
 use comet_parser as parser;
-use parser::ast::{Expr, Opcode, Ident};
+use parser::ast::{self, Expr, Ident, Opcode, Statement};
 use parser::diagnostics::{ByteIndex, Span};
 use parser::symbol::Symbol;
 
+use cranelift_entity::{entity_impl, EntityList, EntityRef, ListPool, PrimaryMap};
+
 use std::collections::HashMap;
 
-use crate::fun::*;
 use crate::builder::Builder;
+use crate::fun::*;
+
+#[derive(Debug, PartialEq)]
+pub enum Error {
+    // unimpl
+}
+
+pub fn lower_module(module: &ast::Module, name: &str) -> Result<Module, Error> {
+    let mut ir_module = Module::new(Symbol::intern(name));
+    let mut ctx = Context::new();
+
+    for fun in module.statements.iter() {
+        match fun {
+            Statement::Fn { name, args, body } => {
+                let name = name.0; // TEMP: until we get rid of the Ident(Sym) wrapper
+                let span = Span::initial(); // TODO
+                let fun = Function::new(name, span);
+                ir_module.functions.insert(name, fun);
+                let fun = ir_module.functions.get_mut(&name).unwrap();
+
+                let mut builder = Builder::new(fun);
+
+                ctx.lower_fn(&mut builder, span, name, args, body) // .unwrap();
+            }
+        }
+    }
+
+    Ok(ir_module)
+}
 
 struct Context {
     vars: HashMap<Symbol, Value>,
@@ -15,23 +45,39 @@ struct Context {
 impl Context {
     pub fn new() -> Self {
         Context {
-            vars: HashMap::new()
+            vars: HashMap::new(),
         }
     }
 }
 
 impl Context {
-    pub fn lower_fn(&mut self, builder: &mut Builder, span: Span, name: Symbol, args: &Vec<Expr>, body: &Vec<Expr>) -> Result<Function, ()> {
-        let entry = builder.lambda();
-
+    pub fn lower_fn(
+        &mut self,
+        builder: &mut Builder,
+        span: Span,
+        name: Symbol,
+        args: &[Ident],
+        body: &[Expr],
+        // ) -> Result<Function, Error> {
+    ) -> () {
+        let (entry_cont, entry_val) = builder.lambda();
 
         // lower param patterns
-    
+        for arg in args {
+            let val = builder.arg_insert(entry_cont);
+            self.vars.insert(arg.0, val);
+        }
+
         // lower body
-        unimplemented!()
+        self.lower_block(builder, body, entry_cont).unwrap();
     }
 
-    pub fn lower_block(&mut self, builder: &mut Builder, exprs: &Vec<Expr>, entry: Block) -> Result<(Block, Value), ()> {
+    pub fn lower_block(
+        &mut self,
+        builder: &mut Builder,
+        exprs: &[Expr],
+        entry: Block,
+    ) -> Result<(Block, Value), Error> {
         // loop over expr with lower_expr
         let mut block = entry;
         let mut value = None;
@@ -45,11 +91,14 @@ impl Context {
     }
 
     // need to carefully thread through the blocks:
-    pub fn lower_expr(&mut self, builder: &mut Builder, expr: &Expr, entry: Block) -> Result<(Block, Value), ()> {
+    pub fn lower_expr(
+        &mut self,
+        builder: &mut Builder,
+        expr: &Expr,
+        entry: Block,
+    ) -> Result<(Block, Value), Error> {
         match expr {
-            Expr::Int(i) => {
-                Ok((entry, builder.constant(*i)))
-            }
+            Expr::Int(i) => Ok((entry, builder.constant(*i))),
             Expr::Op(v1, Opcode::Equal, v2) => {
                 // TODO: these shouldn't use entry
                 let (_, v1_val) = self.lower_expr(builder, v1, entry)?;
@@ -59,7 +108,29 @@ impl Context {
             }
             Expr::Let { name, ty, value } => {
                 // compiles to a `store` primop
-                unimplemented!()
+                let (_, value_val) = self.lower_expr(builder, value, entry)?;
+                self.vars.insert(name.0, value_val);
+                Ok((entry, value_val)) // TODO: should return `bottom` val ()
+            }
+            Expr::Var(name) => {
+                // compiles to a 'load' primop?
+                Ok((entry, *self.vars.get(&name.0).expect("undefined variable")))
+            }
+            Expr::Call { name, args } => {
+                // let fun = self.lookup(name.0).expected("function not found");
+
+                let args: Vec<_> = args
+                    .iter()
+                    .map(|arg| {
+                        let (_, val) = self.lower_expr(builder, arg, entry).unwrap();
+                        val
+                    })
+                    .collect();
+
+                // TODO: might need to resolve fun here already
+                let (_primop, result_val) = builder.call(entry, name.0, &args);
+
+                Ok((entry, result_val))
             }
             Expr::If(cond, then_expr, else_expr) => {
                 let (then_cont, then_val) = builder.lambda();
@@ -83,7 +154,7 @@ impl Context {
                 let (then_cont, then_ret) = self.lower_block(builder, then_expr, then_cont)?;
                 builder.jump(then_cont, join_val, &[then_ret]);
                 // and the then return with a jump to join
-    
+
                 // emit else blocks
                 let (else_cont, else_ret) = self.lower_block(builder, else_expr, else_cont)?;
                 builder.jump(else_cont, join_val, &[else_ret]);
@@ -91,7 +162,7 @@ impl Context {
 
                 Ok((join_cont, join_ret))
             }
-            a => unimplemented!("{:?}", a)
+            a => unimplemented!("{:?}", a),
         }
     }
 }
@@ -101,14 +172,17 @@ mod tests {
     use super::*;
     use crate::graph::Graph;
     use comet_parser as parser;
-    use parser::symbol::Symbol;
+    use cranelift_entity::{entity_impl, EntityList, EntityRef, ListPool, PrimaryMap};
     use parser::diagnostics::Span;
-    use cranelift_entity::{ EntityRef, PrimaryMap, ListPool, EntityList, entity_impl };
- 
+    use parser::symbol::Symbol;
+
     #[test]
     fn cond_if_test() {
         let mut fun = Function::new(Symbol::intern("test"), Span::initial());
-        let entry = fun.blocks.push(BlockData { args: EntityList::new(), primops: EntityList::new() });
+        let entry = fun.blocks.push(BlockData {
+            args: EntityList::new(),
+            primops: EntityList::new(),
+        });
 
         let mut builder = Builder::new(fun);
 

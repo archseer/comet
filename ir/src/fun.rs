@@ -1,6 +1,23 @@
-use cranelift_entity::{ EntityRef, PrimaryMap, ListPool, EntityList, entity_impl };
+use cranelift_entity::{entity_impl, EntityList, EntityRef, ListPool, PrimaryMap};
 
-use comet_parser::{symbol::Symbol, diagnostics::Span};
+use comet_parser::{diagnostics::Span, symbol::Symbol};
+
+use std::collections::HashMap;
+
+#[derive(Debug)]
+pub struct Module {
+    pub name: Symbol,
+    pub functions: HashMap<Symbol, Function>,
+}
+
+impl Module {
+    pub(crate) fn new(name: Symbol) -> Module {
+        Module {
+            name,
+            functions: HashMap::new(),
+        }
+    }
+}
 
 /// Block/continuation
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -21,6 +38,7 @@ entity_impl!(Primop, "primop");
 // primops aren't scheduled: we need to schedule them later on
 // primops have params/operands
 
+#[derive(Debug)]
 pub struct BlockData {
     pub args: EntityList<Value>, // Parameter { index, value, owner }
 
@@ -33,6 +51,7 @@ pub struct BlockData {
     // pub terminator: Option<Terminator<'tcx>>,
 }
 
+#[derive(Debug)]
 pub struct ValueData {
     pub kind: ValueType,
     // category
@@ -41,6 +60,7 @@ pub struct ValueData {
 
 // values act as params to blocks/operands to primops
 // common operation: find uses
+#[derive(Debug)]
 pub enum ValueType {
     Constant(i64),
     Argument(Block),
@@ -48,6 +68,8 @@ pub enum ValueType {
     Continuation(Block),
     Primop(Primop),
     Operand(Primop),
+    //
+    Function(Symbol),
 }
 
 // Function
@@ -55,6 +77,7 @@ pub enum ValueType {
 // Value
 // Primop -> Specialize a terminator value?
 
+#[derive(Debug)]
 pub struct Function {
     pub name: Symbol,
     pub span: Span,
@@ -67,20 +90,18 @@ pub struct Function {
     // locals:  ,
     // expressions that identify a location in memory, like _1 or _1.f.
     // places: ,
-    // expressions that produce a value. The "R" stands for the fact that these are the "right-hand side" of an assignment. 
+    // expressions that produce a value. The "R" stands for the fact that these are the "right-hand side" of an assignment.
     // rvalues: ,
-
     /// A pool of values. Stores all values referenced in basic blocks.
     pub value_lists: ListPool<Value>,
     pub primop_lists: ListPool<Primop>,
-
     // constant_values
     //
     // cache: predecessors/successors
 }
 
 impl Function {
-    pub fn new(name: Symbol, span: Span) -> Self {
+    pub(crate) fn new(name: Symbol, span: Span) -> Self {
         Function {
             name,
             span,
@@ -97,6 +118,7 @@ impl Function {
 /// Block 0 is always the entry block.
 pub const START: Block = Block(0);
 
+#[derive(Debug)]
 pub struct PrimopData {
     pub kind: OpType,
     /// Operands: Typed values.
@@ -105,9 +127,31 @@ pub struct PrimopData {
     pub result: Option<Value>,
 }
 
+#[derive(Debug)]
 pub enum OpType {
     Call,
+    Jump,
     Return,
     Eq,
-    Branch
+    Branch,
+}
+
+// utility
+
+impl Function {
+    pub fn entry(&self) -> &BlockData {
+        &self.blocks[START]
+    }
+
+    pub fn block(&self, id: Block) -> &BlockData {
+        &self.blocks[id]
+    }
+
+    pub fn block_args<'a>(&'a self, block: &'a BlockData) -> &'a [Value] {
+        block.args.as_slice(&self.value_lists)
+    }
+
+    pub fn block_primops<'a>(&'a self, block: &'a BlockData) -> &'a [Primop] {
+        block.primops.as_slice(&self.primop_lists)
+    }
 }

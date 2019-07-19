@@ -5,4 +5,5 @@ members = [
     "parser",
     "typeck",
     "ir",
+    "repl",
 ]

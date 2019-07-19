@@ -1,13 +1,8 @@
-pub mod fun;
 pub mod builder;
-pub mod lower;
+pub mod fun;
 pub mod graph;
+pub mod lower;
 
-use comet_parser::{symbol::Symbol};
-use std::collections::HashMap;
-
-struct Module {
-    pub name: Symbol,
-    functions: HashMap<Symbol, fun::Function>
-}
-
+pub use builder::Builder;
+pub use fun::{Block, BlockData, Function, Module, OpType, Primop, PrimopData, Value, ValueData};
+pub use lower::lower_module;

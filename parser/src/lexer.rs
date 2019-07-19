@@ -546,7 +546,7 @@ pub type SpannedToken<'input> = (ByteIndex, Token, ByteIndex);
 impl<'input> Iterator for Lexer<'input> {
     type Item = Result<(ByteIndex, Token, ByteIndex), LexerError>;
 
-    #[allow(clippy::cyclomatic_complexity)]
+    #[allow(clippy::cognitive_complexity)]
     fn next(&mut self) -> Option<Result<SpannedToken<'input>, LexerError>> {
         while let Some((start, ch)) = self.bump() {
             let end = start + ByteOffset::from_char_len(ch);

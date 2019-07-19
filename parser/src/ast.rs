@@ -12,6 +12,7 @@ impl std::fmt::Debug for Ident {
     }
 }
 
+#[derive(Debug)]
 pub struct Module {
     // unique_id
     // pub name: String,

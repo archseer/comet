@@ -1,0 +1,15 @@
+
+// + 1
+fn add_one(n) {
+  n
+}
+
+fn main() {
+  let a = 1
+
+  if add_one(a) == 2 {
+    1
+  } else {
+    0
+  }
+}
