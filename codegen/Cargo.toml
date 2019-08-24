@@ -6,7 +6,7 @@ license = "MPL-2.0"
 edition = "2018"
 
 [dependencies]
-inkwell = { git = "https://github.com/lumen/inkwell" , branch = "llvm8", features = ["llvm8-0"] }
+inkwell = { git = "https://github.com/TheDan64/inkwell" , branch = "llvm8-0", features = ["llvm8-0"] }
 comet_ir = { path = "../ir" }
 comet_parser = { path = "../parser" }
 

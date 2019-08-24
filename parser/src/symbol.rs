@@ -351,8 +351,7 @@ macro_rules! declare_atoms {(
 
     impl Interner {
         pub fn fresh() -> Self {
-            let interner = Interner::prefill(&[$($string,)*]);
-            interner
+            Interner::prefill(&[$($string,)*])
         }
     }
 }}

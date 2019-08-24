@@ -69,7 +69,10 @@ impl Context {
         }
 
         // lower body
-        self.lower_block(builder, body, entry_cont).unwrap();
+        let (cont, val) = self.lower_block(builder, body, entry_cont).unwrap();
+
+        // insert implicit return if last block doesn't return
+        builder.implicit_return(cont, val);
     }
 
     pub fn lower_block(

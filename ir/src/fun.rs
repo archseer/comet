@@ -56,26 +56,45 @@ pub struct ValueData {
     pub kind: ValueType,
     // category
     // owner? continuation or primop
+
+    // pub usages: EntityList / EntitySet
 }
 
 // values act as params to blocks/operands to primops
 // common operation: find uses
 #[derive(Debug)]
 pub enum ValueType {
+    /// A constant.
     Constant(i64),
-    Argument(Block),
-    // / Parameter
+    /// Argument to the block.
+    Argument(Block, usize), // block, index
+    /// The continuation itself.
     Continuation(Block),
+    /// Return value of the primop.
     Primop(Primop),
-    Operand(Primop),
-    //
-    Function(Symbol),
+    // /// One of the operands of the primop.
+    // Operand(Primop), // -> links a value <--> primop?
+    /// Symbolic function. Could be external.
+    Function(Symbol), // .--> this should be a function ref op that just compiles into a FunctionValue I think
+                      // TODO: functions should all be continuations in a module, and only grouped into functions once we lower/after lambda mangling.
+                      // Any block that takes a return fn argument becomes a function, and all jumps to it become
+                      // calls.
 }
 
 // Function
 // Continuation / BasicBlock
 // Value
 // Primop -> Specialize a terminator value?
+
+impl ValueData {
+    // TODO: this is ugly and needs removing
+    pub fn to_sym(&self) -> Symbol {
+        match self.kind {
+            ValueType::Function(sym) => sym,
+            _ => panic!("called to_sym on a non-Function value"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Function {
@@ -122,9 +141,12 @@ pub const START: Block = Block(0);
 pub struct PrimopData {
     pub kind: OpType,
     /// Operands: Typed values.
-    pub params: EntityList<Value>, // TODO Operand { value, owner }
-    /// Result, if any. `None` if side-effect only.
-    pub result: Option<Value>,
+    pub operands: EntityList<Value>,
+    // TODO Operand { value, owner }
+
+    // TODO: maybe just type annotation
+    // /// Result, if any. `None` if side-effect only.
+    // pub result: Option<Value>,
 }
 
 #[derive(Debug)]
@@ -153,5 +175,14 @@ impl Function {
 
     pub fn block_primops<'a>(&'a self, block: &'a BlockData) -> &'a [Primop] {
         block.primops.as_slice(&self.primop_lists)
+    }
+
+    pub fn continuation(&self, value: Value) -> Block {
+        match self.values[value] {
+            ValueData {
+                kind: ValueType::Continuation(block),
+            } => block,
+            _ => panic!("expected continuation"),
+        }
     }
 }

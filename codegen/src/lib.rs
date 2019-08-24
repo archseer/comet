@@ -4,8 +4,10 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::passes::PassManager;
 use inkwell::types::BasicTypeEnum;
-use inkwell::values::{BasicValueEnum, FloatValue, FunctionValue, PhiValue, PointerValue};
-use inkwell::{FloatPredicate, OptimizationLevel};
+use inkwell::values::{
+    AnyValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue, PhiValue, PointerValue,
+};
+use inkwell::{IntPredicate, OptimizationLevel};
 
 use std::collections::HashMap;
 
@@ -33,13 +35,22 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn emit_module(&mut self, module: &ir::Module) -> () {
-        // loop over funcs
+    /// Returns the `FunctionValue` representing the function being compiled.
+    #[inline]
+    fn fn_value(&self) -> FunctionValue {
+        self.fn_value_opt.unwrap()
+    }
 
+    pub fn emit_module(&mut self, module: &ir::Module) -> () {
         // emit proto for each fn in advance
+        for fun in module.functions.values() {
+            self.emit_proto(fun).unwrap();
+        }
 
         // emit each fun
-        unimplemented!()
+        for fun in module.functions.values() {
+            self.emit_fn(fun).unwrap();
+        }
     }
 
     pub fn emit_proto(&mut self, fun: &ir::Function) -> Result<FunctionValue, Error> {
@@ -89,7 +100,7 @@ impl<'a> Compiler<'a> {
         for (i, arg) in function.get_param_iter().enumerate() {
             // let arg_name = entry_cont.args.get(i, &fun.value_lists).unwrap().as_str();
             let arg_name = "arg";
-            let alloca = self.create_entry_block_alloca(arg_name, Some(&entry));
+            let alloca = self.create_entry_block_alloca(arg_name);
 
             self.builder.build_store(alloca, arg);
 
@@ -125,6 +136,13 @@ impl<'a> Compiler<'a> {
             self.emit_block(fun, block_id, block);
         }
 
+        // TODO How does the entry alloca connect to the actual entry block
+        self.builder.position_at_end(&entry);
+        self.builder
+            .build_unconditional_branch(&self.blocks[&ir::fun::START]);
+
+        function.print_to_stderr();
+
         // return the whole thing after verification and optimization
         if function.verify(true) {
             self.fpm.run_on(&function);
@@ -144,52 +162,149 @@ impl<'a> Compiler<'a> {
         self.builder.position_at_end(&bb);
 
         for op in fun.block_primops(block) {
-            self.emit_primop(fun, *op)
+            self.emit_primop(fun, *op); // ignore value
+        }
+        // TODO: last value should be as block result? tho usually last val is ctrl flow terminator
+    }
+
+    // TODO: possibly use AnyValueEnum?
+    // compiles the value, regardless of what it is
+    fn emit_value(&mut self, fun: &ir::Function, value: ir::Value) -> BasicValueEnum {
+        use ir::ValueType::*;
+        let value = &fun.values[value];
+
+        match value.kind {
+            Constant(c) => self
+                .context
+                .i64_type()
+                .const_int(c as u64, false)
+                .as_basic_value_enum(),
+            Argument(block, index) => {
+                // TODO: maybe lookup self.vals
+                self.phis[&(block, index)].as_basic_value()
+            }
+            Continuation(block) => {
+                println!("c");
+                // a
+                unimplemented!()
+            }
+            Primop(primop) => self
+                .emit_primop(fun, primop)
+                .expect("primop with no value!"),
+            Function(name) => {
+                println!("a");
+                // a
+                unimplemented!()
+            }
         }
     }
 
-    fn emit_primop(&mut self, fun: &ir::Function, op: ir::Primop) {
+    fn emit_primop(&mut self, fun: &ir::Function, op: ir::Primop) -> Option<BasicValueEnum> {
         use ir::OpType::*;
         let op = &fun.primops[op];
+        let args = op.operands.as_slice(&fun.value_lists);
 
+        // TODO: call is emitted twice?
         match op.kind {
             Call => {
-                // a
-                unimplemented!()
+                // 0 = fun
+                // 1.. args
+                let f = &fun.values[args[0]];
+
+                // TODO: use a (module, fn_name) symbol keys map
+                match self.module.get_function(&f.to_sym().as_str()) {
+                    Some(callee) => {
+                        let argv: Vec<_> = args[1..]
+                            .iter()
+                            .map(|arg| {
+                                self.emit_value(fun, *arg)
+                                // TODO: maybe always emit basic value
+                                // .try_as_basic_value()
+                                // .left()
+                                // .unwrap()
+                            })
+                            .collect();
+
+                        let ret_val = self
+                            .builder
+                            .build_call(callee, argv.as_slice(), "fun_call")
+                            .try_as_basic_value()
+                            .left()
+                            .unwrap();
+
+                        Some(ret_val)
+                    }
+                    None => panic!("unknown function!"),
+                }
             }
             Jump => {
-                // a
-                unimplemented!()
+                let cont = fun.continuation(args[0]);
+                self.builder.build_unconditional_branch(&self.blocks[&cont]);
+                // TODO maybe no return?
+                None
             }
             Return => {
-                // a
-                unimplemented!()
+                println!("building return");
+                let return_val = self.emit_value(fun, args[0]);
+                self.builder.build_return(Some(&return_val));
+                // TODO maybe no return?
+                None
             }
             Eq => {
-                // a
-                unimplemented!()
+                // let call = ctx.builder.build_call(
+                //     self.types.enif_compare,
+                //     &[
+                //         lhs,
+                //         rhs,
+                //     ],
+                //     "",
+                // );
+                // let res = call.try_as_basic_value().left().unwrap();
+
+                let cond = self.builder.build_int_compare(
+                    IntPredicate::EQ,
+                    self.emit_value(fun, args[0]).into_int_value(),
+                    self.emit_value(fun, args[1]).into_int_value(),
+                    "eq",
+                );
+
+                // let cond = self.builder.build_int_compare(
+                //     IntPredicate::EQ,
+                //     res.into_int_value(),
+                //     self.context.i32_type().const_int(0, false),
+                //     "eq",
+                // );
+
+                Some(cond.as_basic_value_enum())
             }
             Branch => {
-                // a
-                unimplemented!()
+                let cond = self.emit_value(fun, args[0]);
+                let then_cont = fun.continuation(args[1]);
+                let else_cont = fun.continuation(args[2]);
+
+                self.builder.build_conditional_branch(
+                    *cond.as_int_value(),
+                    &self.blocks[&then_cont],
+                    &self.blocks[&else_cont],
+                );
+                None
+                // TODO: maybe no return?
             }
         }
     }
 
     /// Creates a new stack allocation instruction in the entry block of the function.
-    fn create_entry_block_alloca(&self, name: &str, entry: Option<&BasicBlock>) -> PointerValue {
-        unimplemented!()
-        // let builder = self.context.create_builder();
+    fn create_entry_block_alloca(&self, name: &str) -> PointerValue {
+        let builder = self.context.create_builder();
 
-        // let owned_entry = self.fn_value().get_entry_basic_block();
-        // let entry = owned_entry.as_ref().or(entry).unwrap();
+        let entry = self.fn_value().get_first_basic_block().unwrap();
 
-        // match entry.get_first_instruction() {
-        //     Some(first_instr) => builder.position_before(&first_instr),
-        //     None => builder.position_at_end(entry),
-        // }
+        match entry.get_first_instruction() {
+            Some(first_instr) => builder.position_before(&first_instr),
+            None => builder.position_at_end(&entry),
+        }
 
-        // builder.build_alloca(self.context.i64_type(), name) // TODO
+        builder.build_alloca(self.context.i64_type(), name) // TODO
     }
 }
 

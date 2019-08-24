@@ -7,7 +7,7 @@ edition = "2018"
 
 [dependencies]
 petgraph = "0.4.13"
-cranelift-entity = "0.35.0"
+cranelift-entity = "0.40.0"
 # TODO: rust-typed-arena
 comet_parser = { path = "../parser" }
 

@@ -9,14 +9,10 @@ edition = "2018"
 comet_parser = { path = "../parser" }
 
 # error reporting
-codespan = {git = "https://github.com/brendanzab/codespan"}
-codespan-reporting = {git = "https://github.com/brendanzab/codespan"}
+codespan = "0.4.0"
+codespan-reporting = "0.4.0"
 im = "13.0.0"
 itertools = "0.8.0"
 
 [dev-dependencies]
 pretty_assertions = "0.6"
-
-[patch.crates-io]
-codespan = {git = "https://github.com/brendanzab/codespan"}
-codespan-reporting = {git = "https://github.com/brendanzab/codespan"}

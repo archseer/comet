@@ -18,8 +18,10 @@ impl<'a> Builder<'a> {
     }
 
     pub fn arg_insert(&mut self, cont: Block) -> Value {
+        let len = self.fun.blocks[cont].args.len(&self.fun.value_lists);
+
         let value = self.fun.values.push(ValueData {
-            kind: ValueType::Argument(cont),
+            kind: ValueType::Argument(cont, len),
         });
         self.fun.blocks[cont]
             .args
@@ -50,21 +52,14 @@ impl<'a> Builder<'a> {
     }
 
     pub fn cmp_eq(&mut self, v1: Value, v2: Value) -> (Primop, Value) {
-        let mut params = EntityList::new();
-        params.push(v1, &mut self.fun.value_lists);
-        params.push(v2, &mut self.fun.value_lists);
+        let mut operands = EntityList::new();
+        operands.push(v1, &mut self.fun.value_lists);
+        operands.push(v2, &mut self.fun.value_lists);
 
         let primop = self.fun.primops.push(PrimopData {
             kind: OpType::Eq,
-            params,
-            result: None,
+            operands,
         });
-
-        let value = self.fun.values.push(ValueData {
-            kind: ValueType::Operand(primop),
-        });
-
-        self.fun.primops[primop].result = Some(value);
 
         let value = self.fun.values.push(ValueData {
             kind: ValueType::Primop(primop),
@@ -74,15 +69,14 @@ impl<'a> Builder<'a> {
     }
 
     pub fn branch(&mut self, main: Block, cond: Value, if_then: Value, if_else: Value) -> Primop {
-        let mut params = EntityList::new();
-        params.push(cond, &mut self.fun.value_lists);
-        params.push(if_then, &mut self.fun.value_lists);
-        params.push(if_else, &mut self.fun.value_lists);
+        let mut operands = EntityList::new();
+        operands.push(cond, &mut self.fun.value_lists);
+        operands.push(if_then, &mut self.fun.value_lists);
+        operands.push(if_else, &mut self.fun.value_lists);
 
         let primop = self.fun.primops.push(PrimopData {
             kind: OpType::Branch,
-            params,
-            result: None,
+            operands,
         });
 
         self.fun.blocks[main]
@@ -92,19 +86,18 @@ impl<'a> Builder<'a> {
     }
 
     pub fn call(&mut self, main: Block, fun: Symbol, args: &[Value]) -> (Primop, Value) {
-        let mut params = EntityList::new();
+        let mut operands = EntityList::new();
 
         let fun = self.fun.values.push(ValueData {
             kind: ValueType::Function(fun),
         });
 
-        params.push(fun, &mut self.fun.value_lists);
-        params.extend(args.iter().copied(), &mut self.fun.value_lists);
+        operands.push(fun, &mut self.fun.value_lists);
+        operands.extend(args.iter().copied(), &mut self.fun.value_lists);
 
         let primop = self.fun.primops.push(PrimopData {
             kind: OpType::Call,
-            params,
-            result: None,
+            operands,
         });
 
         self.fun.blocks[main]
@@ -119,19 +112,48 @@ impl<'a> Builder<'a> {
     }
 
     pub fn jump(&mut self, main: Block, to: Value, args: &[Value]) -> Primop {
-        let mut params = EntityList::new();
-        params.push(to, &mut self.fun.value_lists);
-        params.extend(args.iter().copied(), &mut self.fun.value_lists);
+        let mut operands = EntityList::new();
+        operands.push(to, &mut self.fun.value_lists);
+        operands.extend(args.iter().copied(), &mut self.fun.value_lists);
 
         let primop = self.fun.primops.push(PrimopData {
             kind: OpType::Jump,
-            params,
-            result: None,
+            operands,
         });
 
         self.fun.blocks[main]
             .primops
             .push(primop, &mut self.fun.primop_lists);
         primop
+    }
+
+    pub fn implicit_return(&mut self, main: Block, ret: Value) -> Option<Primop> {
+        let block = &self.fun.blocks[main];
+
+        if let Some(&op) = self.fun.block_primops(block).last() {
+            if let Some(PrimopData {
+                kind: OpType::Return,
+                ..
+            }) = self.fun.primops.get(op)
+            {
+                // ok, already has a return
+                return None;
+            }
+        }
+
+        let mut operands = EntityList::new();
+        operands.push(ret, &mut self.fun.value_lists);
+
+        // else insert a return
+        let primop = self.fun.primops.push(PrimopData {
+            kind: OpType::Return,
+            operands,
+        });
+
+        self.fun.blocks[main]
+            .primops
+            .push(primop, &mut self.fun.primop_lists);
+
+        Some(primop)
     }
 }

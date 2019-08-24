@@ -13,10 +13,10 @@ build = "build.rs"
 lalrpop-util = "0.17"
 
 # error reporting
-codespan = {git = "https://github.com/brendanzab/codespan"}
-codespan-reporting = {git = "https://github.com/brendanzab/codespan"}
+codespan = "0.4.0"
+codespan-reporting = "0.4.0"
 err-derive = "0.1.5"
-unicode-xid = "0.1.0"
+unicode-xid = "0.2.0"
 rustc-hash = "1.0.1"
 lazy_static = "1.3.0"
 # typed-arena = "1.4.1"
@@ -35,7 +35,3 @@ pretty_assertions = "0.6"
 
 [build-dependencies]
 lalrpop = "0.17"
-
-[patch.crates-io]
-codespan = {git = "https://github.com/brendanzab/codespan"}
-codespan-reporting = {git = "https://github.com/brendanzab/codespan"}

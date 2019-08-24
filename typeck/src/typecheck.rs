@@ -123,7 +123,7 @@ fn adjust_levels(ty: &mut Type, id: usize, level: usize) -> Result<(), Error> {
             level: other_level,
         }) => {
             if id == *other_id {
-                return Err(Error::RecursiveType);
+                Err(Error::RecursiveType)
             } else if *other_level > level {
                 *other_level = level;
                 Ok(())
@@ -254,10 +254,10 @@ fn match_fun_type(t: &mut Type, arity: usize, env: &mut Env) -> Result<(Vec<Type
             if args.len() == arity {
                 Ok((args.clone(), *ret.clone()))
             } else {
-                return Err(Error::UnexpectedArity {
+                Err(Error::UnexpectedArity {
                     expected: arity,
                     given: args.len(),
-                });
+                })
             }
         }
         Type::Var(Var::Link(t)) => match_fun_type(t, arity, env),
@@ -274,7 +274,7 @@ fn match_fun_type(t: &mut Type, arity: usize, env: &mut Env) -> Result<(Vec<Type
                 args: args.clone(),
                 ret: Box::new(ret.clone()),
             }));
-            return Ok((args, ret));
+            Ok((args, ret))
         }
         _ => Err(Error::NotFn),
     }
@@ -314,7 +314,7 @@ pub fn infer(t: &Expr, env: &mut Env, level: usize) -> Result<Type, Error> {
 
             // generate a new environment with formal parameters
             args.iter().zip(arg_types.iter()).for_each(|(name, t)| {
-                env.variables.insert(name.0.clone(), t.clone());
+                env.variables.insert(name.0, t.clone());
             });
 
             // infer the return type
@@ -336,7 +336,7 @@ pub fn infer(t: &Expr, env: &mut Env, level: usize) -> Result<Type, Error> {
             // Type annotation on variable
             match ty {
                 None => {
-                    env.variables.insert(name.0.clone(), initial.clone());
+                    env.variables.insert(name.0, initial.clone());
                     Ok(initial)
                 }
                 Some(ident) => {
@@ -391,7 +391,7 @@ pub fn infer_fn() {
     // infer_block
 }
 
-pub fn infer_block(block: &Vec<Expr>, level: usize, env: &mut Env) -> Result<Type, Error> {
+pub fn infer_block(block: &[Expr], level: usize, env: &mut Env) -> Result<Type, Error> {
     let level = level + 1;
     block
         .iter()
