@@ -8,7 +8,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-structopt = "0.2.16"
+structopt = "0.3"
 comet_parser = { path = "../parser" }
 comet_ir = { path = "../ir" }
 comet_codegen = { path = "../codegen" }

@@ -26,12 +26,11 @@ pub struct Compiler<'a> {
     // pub function: &'a Function,
     pub module: &'a Module,
 
-    variables: HashMap<ir::Value, PointerValue>,
+    variables: HashMap<ir::Value, BasicValueEnum>,
     fn_value_opt: Option<FunctionValue>,
 
     blocks: HashMap<ir::Block, BasicBlock>,
     phis: HashMap<(ir::Block, usize), PhiValue>,
-    vals: HashMap<ir::Value, BasicValueEnum>,
 }
 
 impl<'a> Compiler<'a> {
@@ -90,6 +89,8 @@ impl<'a> Compiler<'a> {
 
         self.builder.position_at_end(&entry);
 
+        self.blocks.insert(ir::fun::START, entry);
+
         // update fn field
         self.fn_value_opt = Some(function);
 
@@ -104,14 +105,23 @@ impl<'a> Compiler<'a> {
 
             self.builder.build_store(alloca, arg);
 
-            self.variables
-                .insert(entry_cont.args.get(i, &fun.value_lists).unwrap(), alloca);
+            self.variables.insert(
+                entry_cont.args.get(i, &fun.value_lists).unwrap(),
+                alloca.as_basic_value_enum(),
+            );
+
+            // TODO: insert variables as vals
         }
 
         // -> compile body
 
         // predefine all the continuation blocks
         for (block_id, block) in fun.blocks.iter() {
+            // skip entry block which we already defined
+            if block_id == ir::fun::START {
+                continue;
+            }
+
             let bb = self
                 .context
                 .append_basic_block(&function, &format!("{}", block_id));
@@ -127,7 +137,7 @@ impl<'a> Compiler<'a> {
                 let typ = self.context.i64_type();
                 let phi = self.builder.build_phi(typ, &format!("{}", arg));
                 self.phis.insert((block_id, i), phi);
-                self.vals.insert(*arg, phi.as_basic_value());
+                self.variables.insert(*arg, phi.as_basic_value());
             }
         }
 
@@ -135,11 +145,6 @@ impl<'a> Compiler<'a> {
         for (block_id, block) in fun.blocks.iter() {
             self.emit_block(fun, block_id, block);
         }
-
-        // TODO How does the entry alloca connect to the actual entry block
-        self.builder.position_at_end(&entry);
-        self.builder
-            .build_unconditional_branch(&self.blocks[&ir::fun::START]);
 
         function.print_to_stderr();
 
@@ -169,9 +174,9 @@ impl<'a> Compiler<'a> {
 
     // TODO: possibly use AnyValueEnum?
     // compiles the value, regardless of what it is
-    fn emit_value(&mut self, fun: &ir::Function, value: ir::Value) -> BasicValueEnum {
+    fn emit_value(&mut self, fun: &ir::Function, val: ir::Value) -> BasicValueEnum {
         use ir::ValueType::*;
-        let value = &fun.values[value];
+        let value = &fun.values[val];
 
         match value.kind {
             Constant(c) => self
@@ -179,10 +184,8 @@ impl<'a> Compiler<'a> {
                 .i64_type()
                 .const_int(c as u64, false)
                 .as_basic_value_enum(),
-            Argument(block, index) => {
-                // TODO: maybe lookup self.vals
-                self.phis[&(block, index)].as_basic_value()
-            }
+            // TODO: build load
+            Argument(_block, _index) => self.builder.build_load(self.variables[&val], "argvar"),
             Continuation(block) => {
                 println!("c");
                 // a
@@ -337,7 +340,6 @@ pub fn compile(module: &ir::Module) -> Result<Module, Error> {
 
         blocks: HashMap::new(),
         phis: HashMap::new(),
-        vals: HashMap::new(),
     };
 
     compiler.emit_module(module);

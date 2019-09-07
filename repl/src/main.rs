@@ -2,9 +2,7 @@ use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
-#[structopt(raw(
-    global_settings = "&[AppSettings::ColoredHelp, AppSettings::VersionlessSubcommands]"
-))]
+#[structopt(global_settings(&[AppSettings::ColoredHelp, AppSettings::VersionlessSubcommands]))]
 enum Command {
     #[structopt(name = "build", about = "Compile Comet code")]
     Build {
